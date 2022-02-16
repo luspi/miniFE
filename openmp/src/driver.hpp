@@ -236,6 +236,10 @@ driver(const Box& global_box, Box& my_box,
 
   size_t global_nnz = compute_matrix_stats(A, myproc, numprocs, ydoc);
 
+
+  Tausch *tausch = new Tausch(MPI_COMM_WORLD, false);
+  setup_tausch(A, x, tausch);
+
   //Prepare to perform conjugate gradient solve:
 
   LocalOrdinal max_iters = 200;
@@ -279,14 +283,14 @@ driver(const Box& global_box, Box& my_box,
 #ifdef MINIFE_CSR_MATRIX
     rearrange_matrix_local_external(A);
     cg_solve(A, b, x, matvec_overlap<MatrixType,VectorType>(), max_iters, tol,
-           num_iters, rnorm, cg_times);
+           num_iters, rnorm, cg_times, tausch);
 #else
     std::cout << "ERROR, matvec with overlapping comm/comp only works with CSR matrix."<<std::endl;
 #endif
   }
   else {
     cg_solve(A, b, x, matvec_std<MatrixType,VectorType>(), max_iters, tol,
-           num_iters, rnorm, cg_times);
+           num_iters, rnorm, cg_times, tausch);
     if (myproc == 0) {
       std::cout << "Final Resid Norm: " << rnorm << std::endl;
     }
@@ -304,6 +308,25 @@ driver(const Box& global_box, Box& my_box,
       verify_result = verify_solution(mesh, x, tolerance, verify_whole_domain);
     }
   }
+
+  /////////////////////////////
+
+  double myavgtime = tausch->getAvgTiming();
+
+  double *alltimings;
+  if(myproc == 0)
+    alltimings = new double[numprocs];
+
+  MPI_Gather(&myavgtime, 1, MPI_DOUBLE, alltimings, 1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+
+  if(myproc == 0) {
+    const auto [tmin, tmax] = std::minmax_element(&alltimings[0], &alltimings[numprocs]);
+    double tsum = 0;
+    for(int i = 0; i < numprocs; ++i) tsum += alltimings[i];
+    std::cout << "** Communication [s] (min/max/avg): " << *tmin << "/" << *tmax << "/" << tsum/static_cast<double>(numprocs) << std::endl;
+  }
+
+  /////////////////////////////
 
 #ifdef MINIFE_DEBUG
   write_vector("x.vec", x);
