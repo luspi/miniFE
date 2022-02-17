@@ -36,6 +36,7 @@
 #include <sstream>
 #include <fstream>
 #include <iomanip>
+#include <chrono>
 
 #include <Vector.hpp>
 #include <Vector_functions.hpp>
@@ -486,27 +487,30 @@ namespace miniFE {
           const int MAX_BLOCKS=32768;
           int NUM_BLOCKS=min(MAX_BLOCKS,(int)(A.rows.size()+BLOCK_SIZE-1)/BLOCK_SIZE);
 
-          double t0, tex1 = 0, tex2 = 0;
+          double tex1 = 0, tex2 = 0;
 
 #ifndef MATVEC_OVERLAP
-          TICK();
+          auto t0 = std::chrono::steady_clock::now();
           exchange_externals(A, x, tausch);
-          TOCK(tex1);
+          auto t1 = std::chrono::steady_clock::now();
+          tex1 = std::chrono::duration<double, std::milli>(t1-t0).count();
 
           matvec_ell_kernel<<<NUM_BLOCKS,BLOCK_SIZE,0,CudaManager::s1>>>(A.getPOD(), x.getPOD(), y.getPOD());
 #else
           nvtxRangeId_t r1=nvtxRangeStartA("begin exchange");
-          TICK();
+          auto t0 = std::chrono::steady_clock::now();
           begin_exchange_externals(A,x, tausch);
-          TOCK(tex1);
+          auto t1 = std::chrono::steady_clock::now();
+          tex1 = std::chrono::duration<double, std::milli>(t1-t0).count();
           nvtxRangeEnd(r1);
           nvtxRangeId_t r2=nvtxRangeStartA("interier region");
           matvec_overlap_ell_kernel<INTERNAL><<<NUM_BLOCKS,BLOCK_SIZE,0,CudaManager::s1>>>(A.getPOD(), x.getPOD(), y.getPOD());
           nvtxRangeEnd(r2);
           nvtxRangeId_t r3=nvtxRangeStartA("end exchange");
-          TICK();
+          auto t2 = std::chrono::steady_clock::now();
           finish_exchange_externals(A,x, tausch);
-          TOCK(tex2);
+          auto t3 = std::chrono::steady_clock::now();
+          tex2 = std::chrono::duration<double,std::milli>(t3-t2).count();
           nvtxRangeEnd(r3);
           nvtxRangeId_t r4=nvtxRangeStartA("exterier region");
           matvec_overlap_ell_kernel<EXTERNAL><<<NUM_BLOCKS,BLOCK_SIZE,0,CudaManager::s1>>>(A.getPOD(), x.getPOD(), y.getPOD());
