@@ -236,6 +236,10 @@ driver(const Box& global_box, Box& my_box,
 
   size_t global_nnz = compute_matrix_stats(A, myproc, numprocs, ydoc);
 
+  if(myproc == 0) {
+    std::cout << "Communication: original" << std::endl;
+  }
+
   //Prepare to perform conjugate gradient solve:
 
   LocalOrdinal max_iters = 200;
@@ -275,18 +279,20 @@ driver(const Box& global_box, Box& my_box,
     std::cout << "Starting CG solver ... " << std::endl;
   }
 
+  double t_exchange = 0;
+
   if (matvec_with_comm_overlap) {
 #ifdef MINIFE_CSR_MATRIX
     rearrange_matrix_local_external(A);
-    cg_solve(A, b, x, matvec_overlap<MatrixType,VectorType>(), max_iters, tol,
-           num_iters, rnorm, cg_times);
+    t_exchange = cg_solve(A, b, x, matvec_overlap<MatrixType,VectorType>(), max_iters, tol,
+                          num_iters, rnorm, cg_times);
 #else
     std::cout << "ERROR, matvec with overlapping comm/comp only works with CSR matrix."<<std::endl;
 #endif
   }
   else {
-    cg_solve(A, b, x, matvec_std<MatrixType,VectorType>(), max_iters, tol,
-           num_iters, rnorm, cg_times);
+    t_exchange = cg_solve(A, b, x, matvec_std<MatrixType,VectorType>(), max_iters, tol,
+                          num_iters, rnorm, cg_times);
     if (myproc == 0) {
       std::cout << "Final Resid Norm: " << rnorm << std::endl;
     }
@@ -304,6 +310,23 @@ driver(const Box& global_box, Box& my_box,
       verify_result = verify_solution(mesh, x, tolerance, verify_whole_domain);
     }
   }
+
+  /////////////////////////////
+
+  double *alltimings;
+  if(myproc == 0)
+    alltimings = new double[numprocs];
+
+  MPI_Gather(&t_exchange, 1, MPI_DOUBLE, alltimings, 1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+
+  if(myproc == 0) {
+    const auto [tmin, tmax] = std::minmax_element(&alltimings[0], &alltimings[numprocs]);
+    double tsum = 0;
+    for(int i = 0; i < numprocs; ++i) tsum += alltimings[i];
+    std::cout << "** Communication [s] (min/max/avg): " << *tmin << "/" << *tmax << "/" << tsum/static_cast<double>(numprocs) << std::endl;
+  }
+
+  /////////////////////////////
 
 #ifdef MINIFE_DEBUG
   write_vector("x.vec", x);
