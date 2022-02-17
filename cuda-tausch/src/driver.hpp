@@ -289,13 +289,15 @@ driver(const Box& global_box, Box& my_box,
     std::cout << "Starting CG solver ... " << std::endl;
   }
 
+  double t_exchange = 0;
+
   if (matvec_with_comm_overlap) {
     std::cout << "ERROR, matvec with overlapping comm/comp only works with CSR matrix."<<std::endl;
   }
   else {
     nvtxRangeId_t r5=nvtxRangeStartA("cgsolve");
-    cg_solve(A, b, x, matvec_std<MatrixType,VectorType>(), max_iters, tol,
-           num_iters, rnorm, cg_times, tausch);
+    t_exchange = cg_solve(A, b, x, matvec_std<MatrixType,VectorType>(), max_iters, tol,
+                          num_iters, rnorm, cg_times, tausch);
     nvtxRangeEnd(r5);
 
 
@@ -320,13 +322,11 @@ driver(const Box& global_box, Box& my_box,
 
   /////////////////////////////
 
-  double myavgtime = tausch->getAvgTiming();
-
   double *alltimings;
   if(myproc == 0)
     alltimings = new double[numprocs];
 
-  MPI_Gather(&myavgtime, 1, MPI_DOUBLE, alltimings, 1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+  MPI_Gather(&t_exchange, 1, MPI_DOUBLE, alltimings, 1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
 
   if(myproc == 0) {
     double tsum = 0, tmin = 9999999, tmax = 0;

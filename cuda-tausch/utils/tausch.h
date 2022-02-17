@@ -115,9 +115,6 @@ public:
         else
             TAUSCH_COMM = comm;
 
-        sumTimings = 0;
-        numTimings = 0;
-
     }
 
     /**
@@ -1815,18 +1812,6 @@ public:
 
     }
 
-    int howmanysend() {
-        return sendBuffer.size();
-    }
-
-    void addTiming(double val) {
-        sumTimings += val;
-        numTimings += 1;
-    }
-    double getAvgTiming() {
-        return sumTimings/static_cast<double>(numTimings);
-    }
-
 private:
 
     MPI_Comm TAUSCH_COMM;
@@ -1874,9 +1859,6 @@ private:
     cl::CommandQueue ocl_queue;
 
 #endif
-
-    double sumTimings;
-    int numTimings;
 
 };
 
