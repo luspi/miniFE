@@ -546,7 +546,12 @@ void operator()(MatrixType& A,
             VectorType& y,
             Tausch *tausch)
 {
+  double t0 = 0, tex = 0;
+  TICK();
   exchange_externals(A, x, tausch);
+  TOCK(tex);
+
+  tausch->addTiming(tex);
 
   typedef typename MatrixType::ScalarType ScalarType;
   typedef typename MatrixType::GlobalOrdinalType GlobalOrdinalType;
@@ -594,7 +599,10 @@ void operator()(MatrixType& A,
                 Tausch *tausch)
 {
 #ifdef HAVE_MPI
-  begin_exchange_externals(A, x);
+  double t0 = 0, tex1 = 0;
+  TICK();
+  begin_exchange_externals(A, x, tausch);
+  TOCK(tex1);
 #endif
 
   typedef typename MatrixType::ScalarType ScalarType;
@@ -621,7 +629,12 @@ void operator()(MatrixType& A,
   }
 
 #ifdef HAVE_MPI
-  finish_exchange_externals(A.neighbors.size());
+  double tex2 = 0;
+  TICK();
+  finish_exchange_externals(A.neighbors, x, tausch);
+  TOCK(tex2);
+
+  tausch->addTiming(tex1+tex2);
 
   Arowoffsets = &A.row_offsets_external[0];
   beta = 1;

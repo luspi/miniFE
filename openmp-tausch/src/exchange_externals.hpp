@@ -108,6 +108,16 @@ exchange_externals(MatrixType& A,
 
   int MPI_MY_TAG = 99;
 
+  std::vector<MPI_Request>& request = A.request;
+
+  //
+  // Post receives first
+  //
+
+  for(int i=0; i<A.neighbors.size(); ++i) {
+    request[i] = tausch->recv(i, MPI_MY_TAG, A.neighbors[i], 0, false);
+  }
+
   //
   // Pack and send to each neighbor
   //
@@ -121,8 +131,12 @@ exchange_externals(MatrixType& A,
   // Recv and unpack from each neighbor
   //
 
+  MPI_Status status;
   for(int i=0; i<A.neighbors.size(); ++i) {
-    tausch->recv(i, MPI_MY_TAG, A.neighbors[i]);
+    if(MPI_Wait(&request[i], &status) != MPI_SUCCESS) {
+      std::cerr << "MPI_Wait error\n"<<std::endl;
+      MPI_Abort(MPI_COMM_WORLD, -1);
+    }
     tausch->unpackRecvBuffer(i, 0, &(x.coefs[0]));
   }
 
@@ -142,7 +156,8 @@ template<typename MatrixType,
          typename VectorType>
 void
 begin_exchange_externals(MatrixType& A,
-                         VectorType& x)
+                         VectorType& x,
+                         Tausch *tausch)
 {
 
 #ifdef HAVE_MPI
@@ -153,85 +168,47 @@ begin_exchange_externals(MatrixType& A,
 
   if (numprocs < 2) return;
 
-  typedef typename MatrixType::ScalarType Scalar;
-  typedef typename MatrixType::LocalOrdinalType LocalOrdinal;
-  typedef typename MatrixType::GlobalOrdinalType GlobalOrdinal;
-
-  // Extract Matrix pieces
-
-  int local_nrow = A.rows.size();
-  int num_neighbors = A.neighbors.size();
-  const std::vector<LocalOrdinal>& recv_length = A.recv_length;
-  const std::vector<LocalOrdinal>& send_length = A.send_length;
-  const std::vector<int>& neighbors = A.neighbors;
-  const std::vector<GlobalOrdinal>& elements_to_send = A.elements_to_send;
-
-  std::vector<Scalar> send_buffer(elements_to_send.size(), 0);
-
-  //
-  // first post receives, these are immediate receives
-  // Do not wait for result to come, will do that at the
-  // wait call below.
-  //
-
   int MPI_MY_TAG = 99;
 
-  exch_ext_requests.resize(num_neighbors);
+  exch_ext_requests.resize(A.neighbors.size());
 
-  //
-  // Externals are at end of locals
-  //
+  // Post receives
 
-  std::vector<Scalar>& x_coefs = x.coefs;
-  Scalar* x_external = &(x_coefs[local_nrow]);
-
-  MPI_Datatype mpi_dtype = TypeTraits<Scalar>::mpi_type();
-
-  // Post receives first
-  for(int i=0; i<num_neighbors; ++i) {
-    int n_recv = recv_length[i];
-    MPI_Irecv(x_external, n_recv, mpi_dtype, neighbors[i], MPI_MY_TAG,
-              MPI_COMM_WORLD, &exch_ext_requests[i]);
-    x_external += n_recv;
+  for(int i=0; i<A.neighbors.size(); ++i) {
+    exch_ext_requests[i] = tausch->recv(i, MPI_MY_TAG, A.neighbors[i], 0, false);
   }
 
   //
-  // Fill up send buffer
+  // Pack and send to each neighbor
   //
 
-  size_t total_to_be_sent = elements_to_send.size();
-  for(size_t i=0; i<total_to_be_sent; ++i) send_buffer[i] = x.coefs[elements_to_send[i]];
-
-  //
-  // Send to each neighbor
-  //
-
-  Scalar* s_buffer = &send_buffer[0];
-
-  for(int i=0; i<num_neighbors; ++i) {
-    int n_send = send_length[i];
-    MPI_Send(s_buffer, n_send, mpi_dtype, neighbors[i], MPI_MY_TAG,
-             MPI_COMM_WORLD);
-    s_buffer += n_send;
+  for(int i=0; i<A.neighbors.size(); ++i) {
+    tausch->packSendBuffer(i, 0, &(x.coefs[0]));
+    tausch->send(i, MPI_MY_TAG, A.neighbors[i]);
   }
+
 #endif
 }
 
-inline
+template<typename VectorType>
 void
-finish_exchange_externals(int num_neighbors)
+finish_exchange_externals(std::vector<int>& neighbors, VectorType& x, Tausch *tausch)
 {
 #ifdef HAVE_MPI
+
+  int MPI_MY_TAG = 99;
+
   //
-  // Complete the reads issued above
+  // Recv and unpack from each neighbor
   //
 
   MPI_Status status;
-  for(int i=0; i<num_neighbors; ++i) {
-    if (MPI_Wait(&exch_ext_requests[i], &status) != MPI_SUCCESS) {
+  for(int i=0; i<neighbors.size(); ++i) {
+    if(MPI_Wait(&exch_ext_requests[i], &status) != MPI_SUCCESS) {
       std::cerr << "MPI_Wait error\n"<<std::endl;
       MPI_Abort(MPI_COMM_WORLD, -1);
     }
+    tausch->unpackRecvBuffer(i, 0, &(x.coefs[0]));
   }
 
 //endif HAVE_MPI
