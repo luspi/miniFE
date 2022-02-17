@@ -72,6 +72,9 @@ void setup_tausch(MatrixType& A, VectorType& x, Tausch *tausch) {
     indices.push_back({offset, n_recv, 1, 1});
 
     tausch->addRecvHaloInfo(indices, sizeof(Scalar), 1);
+#ifdef GPUDIRECT
+    tausch->setRecvCommunicationStrategy(i, Tausch::Communication::CUDAAwareMPI);
+#endif
 
     offset += n_recv;
 
