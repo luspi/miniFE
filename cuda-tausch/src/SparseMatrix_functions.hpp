@@ -497,13 +497,20 @@ namespace miniFE {
           matvec_ell_kernel<<<NUM_BLOCKS,BLOCK_SIZE,0,CudaManager::s1>>>(A.getPOD(), x.getPOD(), y.getPOD());
 #else
           nvtxRangeId_t r1=nvtxRangeStartA("begin exchange");
-          begin_exchange_externals(A,x);
+          double t0 = 0, tex1 = 0;
+          TICK();
+          begin_exchange_externals(A,x, tausch);
+          TOCK(tex1);
           nvtxRangeEnd(r1);
           nvtxRangeId_t r2=nvtxRangeStartA("interier region");
           matvec_overlap_ell_kernel<INTERNAL><<<NUM_BLOCKS,BLOCK_SIZE,0,CudaManager::s1>>>(A.getPOD(), x.getPOD(), y.getPOD());
           nvtxRangeEnd(r2);
           nvtxRangeId_t r3=nvtxRangeStartA("end exchange");
-          finish_exchange_externals(A,x);
+          double tex2 = 0;
+          TICK();
+          finish_exchange_externals(A,x, tausch);
+          TOCK(tex2);
+          tausch->addTiming(tex1+tex2);
           nvtxRangeEnd(r3);
           nvtxRangeId_t r4=nvtxRangeStartA("exterier region");
           matvec_overlap_ell_kernel<EXTERNAL><<<NUM_BLOCKS,BLOCK_SIZE,0,CudaManager::s1>>>(A.getPOD(), x.getPOD(), y.getPOD());

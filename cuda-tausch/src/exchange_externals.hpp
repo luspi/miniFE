@@ -119,13 +119,35 @@ exchange_externals(MatrixType& A,
 
   int MPI_MY_TAG = 99;
 
+  std::vector<MPI_Request>& request = A.request;
+
+  //
+  // Post receives first
+  //
+
+  for(int i=0; i<A.neighbors.size(); ++i) {
+    request[i] = tausch->recv(i, MPI_MY_TAG, A.neighbors[i], 0, false);
+  }
+
+  //
+  // Pack and send to each neighbor
+  //
+
   for(int i=0; i<A.neighbors.size(); ++i) {
     tausch->packSendBufferCUDA(i, 0, static_cast<Scalar*>(thrust::raw_pointer_cast(&(x.d_coefs[0]))));
     tausch->send(i, MPI_MY_TAG, A.neighbors[i]);
   }
 
+  //
+  // Recv and unpack from each neighbor
+  //
+
+  MPI_Status status;
   for(int i=0; i<A.neighbors.size(); ++i) {
-    tausch->recv(i, MPI_MY_TAG, A.neighbors[i]);
+    if(MPI_Wait(&request[i], &status) != MPI_SUCCESS) {
+      std::cerr << "MPI_Wait error\n"<<std::endl;
+      MPI_Abort(MPI_COMM_WORLD, -1);
+    }
     tausch->unpackRecvBuffer(i, 0, &(x.coefs[0]));
   }
 
@@ -145,7 +167,8 @@ template<typename MatrixType,
          typename VectorType>
 void
 begin_exchange_externals(MatrixType& A,
-                         VectorType& x)
+                         VectorType& x,
+                         Tausch *tausch)
 {
 #ifdef HAVE_MPI
 
@@ -159,13 +182,6 @@ begin_exchange_externals(MatrixType& A,
   typedef typename MatrixType::LocalOrdinalType LocalOrdinal;
   typedef typename MatrixType::GlobalOrdinalType GlobalOrdinal;
 
-  // Extract Matrix pieces
-
-  int local_nrow = A.rows.size();
-  int num_neighbors = A.neighbors.size();
-  const std::vector<LocalOrdinal>& recv_length = A.recv_length;
-  const std::vector<int>& neighbors = A.neighbors;
-
   //
   // first post receives, these are immediate receives
   // Do not wait for result to come, will do that at the
@@ -174,101 +190,46 @@ begin_exchange_externals(MatrixType& A,
 
   int MPI_MY_TAG = 99;
 
-  exch_ext_requests.resize(num_neighbors*2);
+  exch_ext_requests.resize(A.neighbors.size()*2);
 
-  //
-  // Externals are at end of locals
-  //
-#ifdef GPUDIRECT
-  Scalar * x_external = thrust::raw_pointer_cast(&x.d_coefs[local_nrow]);
-#else
-  std::vector<Scalar>& x_coefs = x.coefs;
-  Scalar* x_external = &(x_coefs[local_nrow]);
-#endif
+  // Post receives
 
-  MPI_Datatype mpi_dtype = TypeTraits<Scalar>::mpi_type();
-
-  // Post receives first
-  for(int i=0; i<num_neighbors; ++i) {
-    int n_recv = recv_length[i];
-    MPI_Irecv(x_external, n_recv, mpi_dtype, neighbors[i], MPI_MY_TAG,
-              MPI_COMM_WORLD, &exch_ext_requests[i]);
-    x_external += n_recv;
+  for(int i=0; i<A.neighbors.size(); ++i) {
+    exch_ext_requests[i] = tausch->recv(i, MPI_MY_TAG, A.neighbors[i], 0, false);
   }
 
   //
-  // Fill up send buffer
+  // Pack and send to each neighbor
   //
-  int BLOCK_SIZE=256;
-  int BLOCKS=min((int)(A.d_elements_to_send.size()+BLOCK_SIZE-1)/BLOCK_SIZE,2048);
 
-  cudaEventRecord(CudaManager::e1,CudaManager::s1);
-  cudaStreamWaitEvent(CudaManager::s2,CudaManager::e1,0);
-
-  copyElementsToBuffer<<<BLOCKS,BLOCK_SIZE,0,CudaManager::s2>>>(thrust::raw_pointer_cast(&x.d_coefs[0]),
-                                     thrust::raw_pointer_cast(&A.d_send_buffer[0]), 
-                                     thrust::raw_pointer_cast(&A.d_elements_to_send[0]),
-                                     A.d_elements_to_send.size());
-  cudaCheckError();
-  //This isn't necessary for correctness but I want to make sure this starts before the interrior kernel
-  cudaStreamWaitEvent(CudaManager::s1,CudaManager::e2,0); 
-#ifndef GPUDIRECT
-  std::vector<Scalar>& send_buffer = A.send_buffer;
-  cudaMemcpyAsync(&send_buffer[0],thrust::raw_pointer_cast(&A.d_send_buffer[0]),sizeof(Scalar)*A.d_elements_to_send.size(),cudaMemcpyDeviceToHost,CudaManager::s2);
-  cudaCheckError();
-#endif
-  cudaEventRecord(CudaManager::e2,CudaManager::s2);
+  for(int i=0; i<A.neighbors.size(); ++i) {
+    tausch->packSendBufferCUDA(i, 0, static_cast<Scalar*>(thrust::raw_pointer_cast(&(x.d_coefs[0]))));
+    tausch->send(i, MPI_MY_TAG, A.neighbors[i]);
+  }
 
 #endif
+
 }
 
 template<typename MatrixType,
          typename VectorType>
 inline
 void
-finish_exchange_externals(MatrixType &A, VectorType &x)
+finish_exchange_externals(MatrixType &A, VectorType &x, Tausch *tausch)
 {
-#ifdef HAVE_MPI
-  typedef typename MatrixType::ScalarType Scalar;
-  typedef typename MatrixType::LocalOrdinalType LocalOrdinal;
-  typedef typename MatrixType::GlobalOrdinalType GlobalOrdinal;
-  
-  const std::vector<LocalOrdinal>& send_length = A.send_length;
-  const std::vector<int>& neighbors = A.neighbors;
-  int num_neighbors = A.neighbors.size();
-  MPI_Datatype mpi_dtype = TypeTraits<Scalar>::mpi_type();
-  int MPI_MY_TAG = 99;
-  
-  //
-  // Send to each neighbor
-  //
+#ifdef HAVE_MP
 
-#ifdef GPUDIRECT
-  Scalar* s_buffer = thrust::raw_pointer_cast(&A.d_send_buffer[0]);
-#else
-  Scalar* s_buffer = &A.send_buffer[0];
-#endif
-  
-  //wait for packing or copy to host to finish
-  cudaEventSynchronize(CudaManager::e2);
-  cudaCheckError();
-
-  for(int i=0; i<num_neighbors; ++i) {
-    int n_send = send_length[i];
-    MPI_Isend(s_buffer, n_send, mpi_dtype, neighbors[i], MPI_MY_TAG,
-             MPI_COMM_WORLD, &exch_ext_requests[num_neighbors+i]);
-    s_buffer += n_send;
-  }
   //
-  // Complete the reads issued above
+  // Recv and unpack from each neighbor
   //
 
   MPI_Status status;
-  for(int i=0; i<exch_ext_requests.size(); ++i) {
-    if (MPI_Wait(&exch_ext_requests[i], &status) != MPI_SUCCESS) {
+  for(int i=0; i<A.neighbors.size(); ++i) {
+    if(MPI_Wait(&request[i], &status) != MPI_SUCCESS) {
       std::cerr << "MPI_Wait error\n"<<std::endl;
       MPI_Abort(MPI_COMM_WORLD, -1);
     }
+    tausch->unpackRecvBuffer(i, 0, &(x.coefs[0]));
   }
 
 //endif HAVE_MPI

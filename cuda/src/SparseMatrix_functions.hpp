@@ -473,7 +473,7 @@ namespace miniFE {
   template<typename MatrixType,
     typename VectorType>
       struct matvec_std {
-        void operator()(MatrixType& A,
+        double operator()(MatrixType& A,
             VectorType& x,
             VectorType& y)
         {
@@ -485,23 +485,33 @@ namespace miniFE {
           const int MAX_BLOCKS=32768;
           int NUM_BLOCKS=min(MAX_BLOCKS,(int)(A.rows.size()+BLOCK_SIZE-1)/BLOCK_SIZE);
 
+          double t0, tex1 = 0, tex2 = 0;
 #ifndef MATVEC_OVERLAP
+          TICK();
           exchange_externals(A, x);
+          TOCK(tex1);
           matvec_ell_kernel<<<NUM_BLOCKS,BLOCK_SIZE,0,CudaManager::s1>>>(A.getPOD(), x.getPOD(), y.getPOD());
 #else
           nvtxRangeId_t r1=nvtxRangeStartA("begin exchange");
+          TICK();
           begin_exchange_externals(A,x);
+          TOCK(tex1);
           nvtxRangeEnd(r1);
           nvtxRangeId_t r2=nvtxRangeStartA("interier region");
           matvec_overlap_ell_kernel<INTERNAL><<<NUM_BLOCKS,BLOCK_SIZE,0,CudaManager::s1>>>(A.getPOD(), x.getPOD(), y.getPOD());
           nvtxRangeEnd(r2);
           nvtxRangeId_t r3=nvtxRangeStartA("end exchange");
+          TICK();
           finish_exchange_externals(A,x);
+          TOCK(tex2);
           nvtxRangeEnd(r3);
           nvtxRangeId_t r4=nvtxRangeStartA("exterier region");
           matvec_overlap_ell_kernel<EXTERNAL><<<NUM_BLOCKS,BLOCK_SIZE,0,CudaManager::s1>>>(A.getPOD(), x.getPOD(), y.getPOD());
           nvtxRangeEnd(r4);
 #endif
+
+          return (tex1+tex2);
+
         }
       };
 

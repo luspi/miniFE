@@ -248,6 +248,10 @@ driver(const Box& global_box, Box& my_box,
 
   size_t global_nnz = compute_matrix_stats(A, myproc, numprocs, ydoc);
 
+  if(myproc == 0) {
+    std::cout << "Communication: Tausch" << std::endl;
+  }
+  
   Tausch *tausch = new Tausch(MPI_COMM_WORLD, false);
   setup_tausch(A, x, tausch);
   
