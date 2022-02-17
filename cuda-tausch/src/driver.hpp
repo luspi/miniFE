@@ -247,6 +247,9 @@ driver(const Box& global_box, Box& my_box,
 #endif
 
   size_t global_nnz = compute_matrix_stats(A, myproc, numprocs, ydoc);
+
+  Tausch *tausch = new Tausch(MPI_COMM_WORLD, false);
+  setup_tausch(A, x, tausch);
   
   //Prepare to perform conjugate gradient solve:
 
@@ -288,7 +291,7 @@ driver(const Box& global_box, Box& my_box,
   else {
     nvtxRangeId_t r5=nvtxRangeStartA("cgsolve");
     cg_solve(A, b, x, matvec_std<MatrixType,VectorType>(), max_iters, tol,
-           num_iters, rnorm, cg_times);
+           num_iters, rnorm, cg_times, tausch);
     nvtxRangeEnd(r5);
 
 
@@ -310,6 +313,31 @@ driver(const Box& global_box, Box& my_box,
       verify_result = verify_solution(mesh, x, tolerance, verify_whole_domain);
     }
   }
+
+  /////////////////////////////
+
+  double myavgtime = tausch->getAvgTiming();
+
+  double *alltimings;
+  if(myproc == 0)
+    alltimings = new double[numprocs];
+
+  MPI_Gather(&myavgtime, 1, MPI_DOUBLE, alltimings, 1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+
+  if(myproc == 0) {
+    double tsum = 0, tmin = 9999999, tmax = 0;
+    for(int i = 0; i < numprocs; ++i) {
+        tsum += alltimings[i];
+        if(alltimings[i] > tmax)
+            tmax = alltimings[i];
+        if(alltimings[i] < tmin)
+            tmin = alltimings[i];
+
+    }
+    std::cout << "** Communication [s] (min/max/avg): " << tmin << "/" << tmax << "/" << tsum/static_cast<double>(numprocs) << std::endl;
+  }
+
+  /////////////////////////////
 
 #ifdef MINIFE_DEBUG
   write_vector("x.vec", x);

@@ -475,7 +475,8 @@ namespace miniFE {
       struct matvec_std {
         void operator()(MatrixType& A,
             VectorType& x,
-            VectorType& y)
+            VectorType& y,
+            Tausch *tausch)
         {
           typedef typename MatrixType::ScalarType ScalarType;
           typedef typename MatrixType::GlobalOrdinalType GlobalOrdinalType;
@@ -486,7 +487,13 @@ namespace miniFE {
           int NUM_BLOCKS=min(MAX_BLOCKS,(int)(A.rows.size()+BLOCK_SIZE-1)/BLOCK_SIZE);
 
 #ifndef MATVEC_OVERLAP
-          exchange_externals(A, x);
+          double t0 = 0, tex = 0;
+          TICK();
+          exchange_externals(A, x, tausch);
+          TOCK(tex);
+
+          tausch->addTiming(tex);
+
           matvec_ell_kernel<<<NUM_BLOCKS,BLOCK_SIZE,0,CudaManager::s1>>>(A.getPOD(), x.getPOD(), y.getPOD());
 #else
           nvtxRangeId_t r1=nvtxRangeStartA("begin exchange");
