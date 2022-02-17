@@ -78,8 +78,7 @@ cg_solve(OperatorType& A,
          typename TypeTraits<typename OperatorType::ScalarType>::magnitude_type& tolerance,
          typename OperatorType::LocalOrdinalType& num_iters,
          typename TypeTraits<typename OperatorType::ScalarType>::magnitude_type& normr,
-         timer_type* my_cg_times,
-         Tausch *tausch)
+         timer_type* my_cg_times)
 {
   typedef typename OperatorType::ScalarType ScalarType;
   typedef typename OperatorType::GlobalOrdinalType GlobalOrdinalType;
@@ -124,7 +123,7 @@ cg_solve(OperatorType& A,
 //  print_vec(p.coefs, "p");
 
   TICK();
-  matvec(A, p, Ap, tausch);
+  matvec(A, p, Ap);
   TOCK(tMATVEC);
 
   TICK(); waxpby(one, b, -one, Ap, r); TOCK(tWAXPY);
@@ -170,7 +169,7 @@ cg_solve(OperatorType& A,
     magnitude_type alpha = 0;
     magnitude_type p_ap_dot = 0;
 
-    TICK(); matvec(A, p, Ap, tausch); TOCK(tMATVEC);
+    TICK(); matvec(A, p, Ap); TOCK(tMATVEC);
     TICK(); p_ap_dot = dot(Ap, p); TOCK(tDOT);
 
 #ifdef MINIFE_DEBUG

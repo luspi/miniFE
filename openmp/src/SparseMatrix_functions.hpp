@@ -96,7 +96,7 @@ void sort_with_companions(ptrdiff_t len, T* array, U* companions)
 }
 
 template<typename MatrixType>
-void write_matrix(const std::string& filename,
+void write_matrix(const std::string& filename, 
                   MatrixType& mat)
 {
   typedef typename MatrixType::LocalOrdinalType LocalOrdinalType;
@@ -200,7 +200,7 @@ sum_in_symm_elem_matrix(size_t num,
   bool flag = false;
   for(size_t i=0; i<num; ++i) {
     GlobalOrdinal row = indices[i];
-
+ 
     const Scalar* row_coefs = &coefs[row_offset];
     const GlobalOrdinal* row_col_inds = &indices[i];
     size_t row_len = num - i;
@@ -209,7 +209,7 @@ sum_in_symm_elem_matrix(size_t num,
     size_t mat_row_len = 0;
     GlobalOrdinal* mat_row_cols = NULL;
     Scalar* mat_row_coefs = NULL;
-
+  
     mat.get_row_pointers(row, mat_row_len, mat_row_cols, mat_row_coefs);
     if (mat_row_len == 0) continue;
 
@@ -421,7 +421,7 @@ zero_row_and_put_1_on_diagonal(MatrixType& A, typename MatrixType::GlobalOrdinal
   GlobalOrdinal* cols = NULL;
   Scalar* coefs = NULL;
   A.get_row_pointers(row, row_len, cols, coefs);
-
+  
   for(size_t i=0; i<row_len; ++i) {
     if (cols[i] == row) coefs[i] = 1;
     else coefs[i] = 0;
@@ -499,15 +499,9 @@ template<typename MatrixType,
 struct matvec_std {
 void operator()(MatrixType& A,
             VectorType& x,
-            VectorType& y,
-            Tausch *tausch)
+            VectorType& y)
 {
-    double t0 = 0, tex = 0;
-    TICK();
-  	exchange_externals(A, x, tausch);
-    TOCK(tex);
-
-    tausch->addTiming(tex);
+  	exchange_externals(A, x);
 
   	typedef typename MatrixType::ScalarType ScalarType;
   	typedef typename MatrixType::GlobalOrdinalType GlobalOrdinalType;
@@ -543,10 +537,9 @@ template<typename MatrixType,
 struct matvec_std {
 void operator()(MatrixType& A,
             VectorType& x,
-            VectorType& y,
-            Tausch *tausch)
+            VectorType& y)
 {
-  exchange_externals(A, x, tausch);
+  exchange_externals(A, x);
 
   typedef typename MatrixType::ScalarType ScalarType;
   typedef typename MatrixType::GlobalOrdinalType GlobalOrdinalType;
@@ -579,10 +572,10 @@ void operator()(MatrixType& A,
 
 template<typename MatrixType,
          typename VectorType>
-void matvec(MatrixType& A, VectorType& x, VectorType& y, Tausch *tausch)
+void matvec(MatrixType& A, VectorType& x, VectorType& y)
 {
   matvec_std<MatrixType,VectorType> mv;
-  mv(A, x, y, tausch);
+  mv(A, x, y);
 }
 
 template<typename MatrixType,
@@ -590,8 +583,7 @@ template<typename MatrixType,
 struct matvec_overlap {
 void operator()(MatrixType& A,
                     VectorType& x,
-                    VectorType& y,
-                Tausch *tausch)
+                    VectorType& y)
 {
 #ifdef HAVE_MPI
   begin_exchange_externals(A, x);
