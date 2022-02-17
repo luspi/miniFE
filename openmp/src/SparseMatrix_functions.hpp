@@ -594,7 +594,10 @@ double operator()(MatrixType& A,
                     VectorType& y)
 {
 #ifdef HAVE_MPI
+  double t0, tex1, tex2;
+  TICK();
   begin_exchange_externals(A, x);
+  TOCK(tex1);
 #endif
 
   typedef typename MatrixType::ScalarType ScalarType;
@@ -621,7 +624,9 @@ double operator()(MatrixType& A,
   }
 
 #ifdef HAVE_MPI
+  TICK();
   finish_exchange_externals(A.neighbors.size());
+  TOCK(tex2);
 
   Arowoffsets = &A.row_offsets_external[0];
   beta = 1;
@@ -637,7 +642,7 @@ double operator()(MatrixType& A,
   }
 #endif
 
-  return 0;
+  return tex1+tex2;
 
 }
 };
