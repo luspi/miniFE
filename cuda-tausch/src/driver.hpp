@@ -290,19 +290,24 @@ driver(const Box& global_box, Box& my_box,
   }
 
   double t_exchange = 0;
+  double t_solve = 0;
 
   if (matvec_with_comm_overlap) {
     std::cout << "ERROR, matvec with overlapping comm/comp only works with CSR matrix."<<std::endl;
   }
   else {
     nvtxRangeId_t r5=nvtxRangeStartA("cgsolve");
+    auto t0 = std::chrono::steady_clock::now();
     t_exchange = cg_solve(A, b, x, matvec_std<MatrixType,VectorType>(), max_iters, tol,
                           num_iters, rnorm, cg_times, tausch);
+    auto t1 = std::chrono::steady_clock::now();
+    t_solve = std::chrono::duration<double, std::milli>(t1-t0).count();
     nvtxRangeEnd(r5);
 
 
     if (myproc == 0) {
       std::cout << "Final Resid Norm: " << rnorm << std::endl;
+      std::cout << "Final Iteration Count: " << num_iters << std::endl;
     }
 
     if (params.verify_solution > 0) {
@@ -322,23 +327,36 @@ driver(const Box& global_box, Box& my_box,
 
   /////////////////////////////
 
-  double *alltimings;
-  if(myproc == 0)
-    alltimings = new double[numprocs];
+  double *alltimings_exch;
+  double *alltimings_solv;
+  if(myproc == 0) {
+    alltimings_exch = new double[numprocs];
+    alltimings_solv = new double[numprocs];
+  }
 
-  MPI_Gather(&t_exchange, 1, MPI_DOUBLE, alltimings, 1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+  MPI_Gather(&t_exchange, 1, MPI_DOUBLE, alltimings_exch, 1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+  MPI_Gather(&t_solve, 1, MPI_DOUBLE, alltimings_solv, 1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
 
   if(myproc == 0) {
-    double tsum = 0, tmin = 9999999, tmax = 0;
+    double tsum_ex = 0, tmin_ex = 9999999, tmax_ex = 0;
+    double tsum_so = 0, tmin_so = 9999999, tmax_so = 0;
     for(int i = 0; i < numprocs; ++i) {
-        tsum += alltimings[i];
-        if(alltimings[i] > tmax)
-            tmax = alltimings[i];
-        if(alltimings[i] < tmin)
-            tmin = alltimings[i];
 
+        tsum_ex += alltimings_exch[i];
+        if(alltimings_exch[i] > tmax_ex)
+            tmax_ex = alltimings_exch[i];
+        if(alltimings_exch[i] < tmin_ex)
+            tmin_ex = alltimings_exch[i];
+
+        tsum_so += alltimings_solv[i];
+        if(alltimings_solv[i] > tmax_so)
+            tmax_so = alltimings_solv[i];
+        if(alltimings_solv[i] < tmin_so)
+            tmin_so = alltimings_solv[i];
     }
-    std::cout << "** Communication [s] (min/max/avg): " << tmin << "/" << tmax << "/" << tsum/static_cast<double>(numprocs) << std::endl;
+    std::cout << "** Communication [ms] (min/max/avg): " << tmin_ex << "/" << tmax_ex << "/" << tsum_ex/static_cast<double>(numprocs) << std::endl;
+    std::cout << "** Total solve [ms] (min/max/avg): " << tmin_so << "/" << tmax_so << "/" << tsum_so/static_cast<double>(numprocs) << std::endl;
+
   }
 
   /////////////////////////////
