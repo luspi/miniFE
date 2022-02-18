@@ -34,6 +34,7 @@
 #include <algorithm>
 #include <sstream>
 #include <fstream>
+#include <chrono>
 
 #include <Vector.hpp>
 #include <Vector_functions.hpp>
@@ -497,17 +498,15 @@ static timer_type exchtime = 0;
 template<typename MatrixType,
          typename VectorType>
 struct matvec_std {
-void operator()(MatrixType& A,
+double operator()(MatrixType& A,
             VectorType& x,
             VectorType& y,
             Tausch *tausch)
 {
-    double t0 = 0, tex = 0;
-    TICK();
-  	exchange_externals(A, x, tausch);
-    TOCK(tex);
 
-    tausch->addTiming(tex);
+    auto t0 = std::chrono::steady_clock::now();
+    exchange_externals(A, x, tausch);
+    auto t1 = std::chrono::steady_clock::now();
 
   	typedef typename MatrixType::ScalarType ScalarType;
   	typedef typename MatrixType::GlobalOrdinalType GlobalOrdinalType;
@@ -535,6 +534,9 @@ void operator()(MatrixType& A,
 
                 ycoefs[row] = sum;
         }
+
+        return std::chrono::duration<double, std::milli>(t1-t0).count();
+
 }
 };
 #elif defined(MINIFE_ELL_MATRIX)
@@ -546,10 +548,9 @@ void operator()(MatrixType& A,
             VectorType& y,
             Tausch *tausch)
 {
-  double t0 = 0, tex = 0;
-  TICK();
+  auto t0 = std::chrono::steady_clock::now();
   exchange_externals(A, x, tausch);
-  TOCK(tex);
+  auto t1 = std::chrono::steady_clock::now();
 
   tausch->addTiming(tex);
 
@@ -578,31 +579,32 @@ void operator()(MatrixType& A,
 
     ycoefs[row] = sum;
   }
+
+  return std::chrono::duration<double, std::milli>(t1-t0).count();
 }
 };
 #endif
 
 template<typename MatrixType,
          typename VectorType>
-void matvec(MatrixType& A, VectorType& x, VectorType& y, Tausch *tausch)
+double matvec(MatrixType& A, VectorType& x, VectorType& y, Tausch *tausch)
 {
   matvec_std<MatrixType,VectorType> mv;
-  mv(A, x, y, tausch);
+  return mv(A, x, y, tausch);
 }
 
 template<typename MatrixType,
          typename VectorType>
 struct matvec_overlap {
-void operator()(MatrixType& A,
+double operator()(MatrixType& A,
                     VectorType& x,
                     VectorType& y,
                 Tausch *tausch)
 {
 #ifdef HAVE_MPI
-  double t0 = 0, tex1 = 0;
-  TICK();
+  auto t0 = std::chrono::steady_clock::now();
   begin_exchange_externals(A, x, tausch);
-  TOCK(tex1);
+  auto t1 = std::chrono::steady_clock::now();
 #endif
 
   typedef typename MatrixType::ScalarType ScalarType;
@@ -629,12 +631,9 @@ void operator()(MatrixType& A,
   }
 
 #ifdef HAVE_MPI
-  double tex2 = 0;
-  TICK();
+  auto t2 = std::chrono::steady_clock::now();
   finish_exchange_externals(A.neighbors, x, tausch);
-  TOCK(tex2);
-
-  tausch->addTiming(tex1+tex2);
+  auto t3 = std::chrono::steady_clock::now();
 
   Arowoffsets = &A.row_offsets_external[0];
   beta = 1;
@@ -648,6 +647,9 @@ void operator()(MatrixType& A,
 
     ycoefs[row] = sum;
   }
+
+  return (std::chrono::duration<double, std::milli>(t1-t0).count() + std::chrono::duration<double, std::milli>(t3-t2).count());
+
 #endif
 }
 };
