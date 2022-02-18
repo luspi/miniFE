@@ -123,7 +123,6 @@ cg_solve(OperatorType& A,
 //  print_vec(p.coefs, "p");
 
   double t_exchange = 0;
-  int num_exchange = 0;
 
   TICK();
   matvec(A, p, Ap);
@@ -173,7 +172,6 @@ cg_solve(OperatorType& A,
     magnitude_type p_ap_dot = 0;
 
     TICK(); t_exchange += matvec(A, p, Ap); TOCK(tMATVEC);
-    num_exchange += 1;
     TICK(); p_ap_dot = dot(Ap, p); TOCK(tDOT);
 
 #ifdef MINIFE_DEBUG
@@ -191,7 +189,7 @@ cg_solve(OperatorType& A,
         my_cg_times[DOT] = tDOT;
         my_cg_times[MATVEC] = tMATVEC;
         my_cg_times[TOTAL] = mytimer() - total_time;
-        return t_exchange/static_cast<double>(num_exchange);
+        return t_exchange;
       }
       else brkdown_tol = 0.1 * p_ap_dot;
     }
@@ -212,7 +210,7 @@ cg_solve(OperatorType& A,
   my_cg_times[MATVECDOT] = tMATVECDOT;
   my_cg_times[TOTAL] = mytimer() - total_time;
 
-  return t_exchange/static_cast<double>(num_exchange);
+  return t_exchange;
 
 }
 

@@ -34,6 +34,7 @@
 #include <algorithm>
 #include <sstream>
 #include <fstream>
+#include <chrono>
 
 #include <Vector.hpp>
 #include <Vector_functions.hpp>
@@ -501,10 +502,9 @@ double operator()(MatrixType& A,
             VectorType& x,
             VectorType& y)
 {
-    double t0 = 0, t1 = 0;
-    TICK();
+    auto t0 = std::chrono::steady_clock::now();
   	exchange_externals(A, x);
-    TOCK(t1);
+    auto t1 = std::chrono::steady_clock::now();
 
   	typedef typename MatrixType::ScalarType ScalarType;
   	typedef typename MatrixType::GlobalOrdinalType GlobalOrdinalType;
@@ -532,7 +532,7 @@ double operator()(MatrixType& A,
 
                 ycoefs[row] = sum;
         }
-        return t1;
+        return std::chrono::duration<double, std::milli>(t1-t0).count();
 }
 };
 #elif defined(MINIFE_ELL_MATRIX)
@@ -543,10 +543,9 @@ double operator()(MatrixType& A,
             VectorType& x,
             VectorType& y)
 {
-    double t0 = 0, t1 = 0;
-    TICK();
-  	exchange_externals(A, x);
-    TOCK(t1);
+  auto t0 = std::chrono::steady_clock::now();
+  exchange_externals(A, x);
+  auto t1 = std::chrono::steady_clock::now();
 
   typedef typename MatrixType::ScalarType ScalarType;
   typedef typename MatrixType::GlobalOrdinalType GlobalOrdinalType;
@@ -573,7 +572,7 @@ double operator()(MatrixType& A,
 
     ycoefs[row] = sum;
   }
-  return t1;
+  return std::chrono::duration<double, std::milli>(t1-t0).count();
 }
 };
 #endif
@@ -594,10 +593,9 @@ double operator()(MatrixType& A,
                     VectorType& y)
 {
 #ifdef HAVE_MPI
-  double t0, tex1, tex2;
-  TICK();
+  auto t0 = std::chrono::steady_clock::now();
   begin_exchange_externals(A, x);
-  TOCK(tex1);
+  auto t1 = std::chrono::steady_clock::now();
 #endif
 
   typedef typename MatrixType::ScalarType ScalarType;
@@ -624,9 +622,9 @@ double operator()(MatrixType& A,
   }
 
 #ifdef HAVE_MPI
-  TICK();
+  auto t2 = std::chrono::steady_clock::now();
   finish_exchange_externals(A.neighbors.size());
-  TOCK(tex2);
+  auto t3 = std::chrono::steady_clock::now();
 
   Arowoffsets = &A.row_offsets_external[0];
   beta = 1;
@@ -642,7 +640,7 @@ double operator()(MatrixType& A,
   }
 #endif
 
-  return tex1+tex2;
+  return (std::chrono::duration<double, std::milli>(t1-t0).count() + std::chrono::duration<double, std::milli>(t3-t2).count());
 
 }
 };
